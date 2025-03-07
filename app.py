@@ -6,7 +6,7 @@ import requests
 import random
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Download and load Quran data
 def download_quran_data():
