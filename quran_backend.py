@@ -55,55 +55,51 @@ def load_quran_data():
         traceback.print_exc()
         return []
 
+# In your find_verses_by_letter_position function (backend)
 def find_verses_by_letter_position(letter, position, limit=5, exclude_ids=None):
-    """
-    Find verses containing the specified Arabic letter in the specified position
-    """
     if exclude_ids is None:
         exclude_ids = []
         
     try:
         verses = load_quran_data()
-        
-        # Shuffle verses for random selection
         random.shuffle(verses)
         
         matching_verses = []
         
-        print(f"Searching for letter '{letter}' in position '{position}'")
-        
         for verse in verses:
             if verse['id'] in exclude_ids:
-                continue  # Skip already displayed verses
+                continue
                 
-            # Get the text content of the verse
             verse_text = verse['text_uthmani']
-            words = verse_text.split()
             
-            # Parse the verse_key to get surah and verse number
+            # Remove diacritical marks for better matching
+            # This simplifies the text for letter position detection
+            # You can add more characters to this list if needed
+            diacritics = ['َ', 'ً', 'ُ', 'ٌ', 'ِ', 'ٍ', 'ّ', 'ْ', 'ـ']
+            cleaned_text = verse_text
+            for diacritic in diacritics:
+                cleaned_text = cleaned_text.replace(diacritic, '')
+            
+            words = cleaned_text.split()
+            
             surah, verse_number = verse['verse_key'].split(':')
             
-            # Track which words match our criteria
             matching_word_indices = []
             
             if position == 'first':
-                # Check if any word starts with the letter
                 for i, word in enumerate(words):
                     if word and word.startswith(letter):
                         matching_word_indices.append(i)
             elif position == 'last':
-                # Check if any word ends with the letter
                 for i, word in enumerate(words):
-                    if word and word.endswith(letter):
+                    if word and len(word) > 0 and word[-1] == letter:
                         matching_word_indices.append(i)
             elif position == 'middle':
-                # Check if the letter appears in the middle of any word (not first or last)
                 for i, word in enumerate(words):
                     if len(word) > 2 and letter in word[1:-1]:
                         matching_word_indices.append(i)
             
             if matching_word_indices:
-                # Add verse to results with the matching word indices
                 matching_verses.append({
                     'id': verse['id'],
                     'surah': int(surah),
@@ -113,19 +109,15 @@ def find_verses_by_letter_position(letter, position, limit=5, exclude_ids=None):
                     'audio_url': f"https://cdn.islamic.network/quran/audio/128/ar.alafasy/{verse['id']}.mp3"
                 })
                 
-                print(f"Found matching verse: Surah {surah}:{verse_number}")
-                
                 if len(matching_verses) >= limit:
                     break
         
-        print(f"Found {len(matching_verses)} matching verses")
         return matching_verses
     except Exception as e:
-        print(f"Error in find_verses_by_letter_position: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error: {e}")
         return []
-
+    
+    
 # API Routes
 @app.route('/api/search', methods=['GET'])
 def search_verses():
