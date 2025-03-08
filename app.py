@@ -40,7 +40,6 @@ def load_quran_data():
         with open('quran_data.json', 'r', encoding='utf-8') as f:
             return json.load(f)
 
-# Find verses by letter position
 def find_verses_by_letter_position(letter, position, limit=5, exclude_ids=None):
     if exclude_ids is None:
         exclude_ids = []
@@ -51,14 +50,24 @@ def find_verses_by_letter_position(letter, position, limit=5, exclude_ids=None):
         
         matching_verses = []
         
+        # Print the letter we're searching for to help with debugging
+        print(f"Searching for letter '{letter}' in position '{position}'")
+        # Get the Unicode code point to verify what we're searching for
+        print(f"Letter Unicode: {ord(letter)}")
+        
         for verse in verses:
             if verse['id'] in exclude_ids:
                 continue
                 
             verse_text = verse['text_uthmani']
-            words = verse_text.split()
             
+            # For debugging specific surahs
             surah, verse_number = verse['verse_key'].split(':')
+            if surah == '85' and int(verse_number) <= 3:  # Debug Surah Buruj for ج and د
+                print(f"Checking Surah 85:{verse_number}: {verse_text}")
+                
+            # Split by spaces while keeping diacritics
+            words = verse_text.split()
             
             matching_word_indices = []
             
@@ -66,14 +75,35 @@ def find_verses_by_letter_position(letter, position, limit=5, exclude_ids=None):
                 for i, word in enumerate(words):
                     if word and word.startswith(letter):
                         matching_word_indices.append(i)
+                        print(f"Found word starting with {letter}: {word}")
             elif position == 'last':
                 for i, word in enumerate(words):
-                    if word and word.endswith(letter):
+                    if not word or len(word) == 0:
+                        continue
+                        
+                    # Get the actual last character (ignoring diacritics)
+                    last_char = None
+                    for char in reversed(word):
+                        # Check if the character is a letter (not a diacritic)
+                        if not is_diacritic(char):
+                            last_char = char
+                            break
+                    
+                    if last_char == letter:
                         matching_word_indices.append(i)
+                        print(f"Found word ending with {letter}: {word}")
             elif position == 'middle':
                 for i, word in enumerate(words):
-                    if len(word) > 2 and letter in word[1:-1]:
+                    if len(word) <= 2:
+                        continue
+                        
+                    # Get word without diacritics
+                    clean_word = remove_diacritics(word)
+                    
+                    # Check if letter is in the middle (not first or last)
+                    if len(clean_word) > 2 and letter in clean_word[1:-1]:
                         matching_word_indices.append(i)
+                        print(f"Found word with {letter} in middle: {word}")
             
             if matching_word_indices:
                 matching_verses.append({
@@ -91,7 +121,19 @@ def find_verses_by_letter_position(letter, position, limit=5, exclude_ids=None):
         return matching_verses
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         return []
+
+# Helper function to determine if a character is a diacritic
+def is_diacritic(char):
+    diacritics = ['َ', 'ً', 'ُ', 'ٌ', 'ِ', 'ٍ', 'ّ', 'ْ', 'ـ', '٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩']
+    return char in diacritics or ord(char) in range(0x064B, 0x065F + 1)
+
+# Helper function to remove diacritics from text
+def remove_diacritics(text):
+    return ''.join([c for c in text if not is_diacritic(c)])
+
 
 # API routes
 @app.route('/')
@@ -136,6 +178,44 @@ def get_more_verses():
     
     verses = find_verses_by_letter_position(letter, position, limit, exclude_list)
     return jsonify({'verses': verses})
+
+# Add this to your app.py file, after your routes
+@app.route('/api/test_surah_buruj', methods=['GET'])
+def test_surah_buruj():
+    """Test endpoint to check Surah Buruj specifically"""
+    verses = load_quran_data()
+    
+    buruj_verses = []
+    for verse in verses:
+        surah, verse_number = verse['verse_key'].split(':')
+        if surah == '85' and int(verse_number) <= 5:
+            # Check for words ending with ج and د
+            words = verse['text_uthmani'].split()
+            ending_with_jim = []
+            ending_with_dal = []
+            
+            for word in words:
+                if word:
+                    # Clean and check the word
+                    last_char = None
+                    for char in reversed(word):
+                        if not is_diacritic(char):
+                            last_char = char
+                            break
+                    
+                    if last_char == 'ج':
+                        ending_with_jim.append(word)
+                    elif last_char == 'د':
+                        ending_with_dal.append(word)
+            
+            buruj_verses.append({
+                'verse_key': verse['verse_key'],
+                'text': verse['text_uthmani'],
+                'ending_with_jim': ending_with_jim,
+                'ending_with_dal': ending_with_dal
+            })
+    
+    return jsonify(buruj_verses)
 
 # Download data at startup
 try:
