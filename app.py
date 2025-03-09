@@ -4,6 +4,40 @@ from flask_cors import CORS
 import json
 import requests
 import random
+import sqlite3
+import datetime
+
+# Setup SQLite database
+def init_db():
+    db_exists = os.path.exists('analytics.db')
+    conn = sqlite3.connect('analytics.db')
+    c = conn.cursor()
+    
+    if not db_exists:
+        # Create tables
+        c.execute('''
+        CREATE TABLE visits (
+            id INTEGER PRIMARY KEY,
+            ip TEXT,
+            timestamp TEXT,
+            path TEXT
+        )
+        ''')
+        
+        c.execute('''
+        CREATE TABLE searches (
+            id INTEGER PRIMARY KEY,
+            letter TEXT,
+            position TEXT,
+            timestamp TEXT
+        )
+        ''')
+        
+    conn.commit()
+    conn.close()
+
+# Initialize DB at startup
+init_db()
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -222,6 +256,73 @@ try:
     download_quran_data()
 except Exception as e:
     print(f"Error downloading data at startup: {e}")
+
+# Analytics routes
+@app.route('/api/track-visit', methods=['POST'])
+def track_visit():
+    ip = request.remote_addr
+    timestamp = datetime.datetime.now().isoformat()
+    path = request.json.get('path', '/') if request.is_json else '/'
+    
+    conn = sqlite3.connect('analytics.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO visits (ip, timestamp, path) VALUES (?, ?, ?)",
+             (ip, timestamp, path))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/track-search', methods=['POST'])
+def track_search():
+    data = request.json
+    letter = data.get('letter', '')
+    position = data.get('position', '')
+    timestamp = datetime.datetime.now().isoformat()
+    
+    conn = sqlite3.connect('analytics.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO searches (letter, position, timestamp) VALUES (?, ?, ?)",
+             (letter, position, timestamp))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    # Simple authentication - replace 'your-secret-key' with something only you know
+    if request.args.get('key') != 'pulaodjs':
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    conn = sqlite3.connect('analytics.db')
+    conn.row_factory = sqlite3.Row  # This enables column access by name
+    c = conn.cursor()
+    
+    # Get unique visitors count (by IP)
+    c.execute("SELECT COUNT(DISTINCT ip) as unique_visitors FROM visits")
+    unique_visitors = c.fetchone()['unique_visitors']
+    
+    # Get total visits
+    c.execute("SELECT COUNT(*) as total_visits FROM visits")
+    total_visits = c.fetchone()['total_visits']
+    
+    # Get letter popularity
+    c.execute("SELECT letter, COUNT(*) as count FROM searches GROUP BY letter ORDER BY count DESC")
+    letter_counts = {row['letter']: row['count'] for row in c.fetchall() if row['letter']}
+    
+    # Get position popularity
+    c.execute("SELECT position, COUNT(*) as count FROM searches GROUP BY position ORDER BY count DESC")
+    position_counts = {row['position']: row['count'] for row in c.fetchall() if row['position']}
+    
+    conn.close()
+    
+    return jsonify({
+        'unique_visitors': unique_visitors,
+        'total_visits': total_visits,
+        'popular_letters': letter_counts,
+        'position_usage': position_counts
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
